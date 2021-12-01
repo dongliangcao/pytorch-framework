@@ -20,7 +20,7 @@ __all__ = ['build_dataset', 'build_dataloader']
 data_folder = osp.dirname(osp.abspath(__file__))
 dataset_filenames = [osp.splitext(osp.basename(v))[0] for v in scandir(data_folder, recursive=True) if v.endswith('_dataset.py')]
 # import all the dataset modules
-_dataset_modules = [importlib.import_module(f'data.{file_name}') for file_name in dataset_filenames]
+_dataset_modules = [importlib.import_module(f'datasets.{file_name}') for file_name in dataset_filenames]
 
 
 def build_transform(transform_opt):
@@ -79,8 +79,6 @@ def build_dataset(dataset_opt):
     # build transform
     if 'transform' in dataset_opt:
         dataset_opt['transform'] = build_transform(dataset_opt.pop('transform'))
-    else:
-        dataset_opt['transform'] = transforms.ToTensor()
     # build dataset
     dataset = DATASET_REGISTRY.get(type)(**dataset_opt)
     logger = get_root_logger()
