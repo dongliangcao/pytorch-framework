@@ -175,11 +175,11 @@ class BaseModel:
         for name, optimizer in self.optimizers.items():
             scheduler_type = scheduler_opts[name].pop('type')
             if scheduler_type in ['MultiStepLR', 'MultiStepRestartLR']:
-                self.schedulers[name] = MultiStepRestartLR(optimizer, **scheduler_opts['name'])
+                self.schedulers[name] = MultiStepRestartLR(optimizer, **scheduler_opts[name])
             elif scheduler_type == 'CosineAnnealingRestartLR':
-                self.schedulers[name] = CosineAnnealingRestartLR(optimizer, **scheduler_opts['name'])
+                self.schedulers[name] = CosineAnnealingRestartLR(optimizer, **scheduler_opts[name])
             elif scheduler_type == 'OneCycleLR':
-                self.schedulers[name] = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_opts['name'])
+                self.schedulers[name] = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_opts[name])
             elif scheduler_type == 'none':
                 self.schedulers[name] = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
             else:
