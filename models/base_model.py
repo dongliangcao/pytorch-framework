@@ -276,6 +276,7 @@ class BaseModel:
         """
         Setup networks to train mode
         """
+        self.is_train = True
         for name in self.networks:
             self.networks[name].train()
 
@@ -283,6 +284,7 @@ class BaseModel:
         """
         Setup networks to eval mode
         """
+        self.is_train = False
         for name in self.networks:
             self.networks[name].eval()
 
