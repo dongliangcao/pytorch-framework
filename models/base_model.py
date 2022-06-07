@@ -4,6 +4,7 @@ from copy import deepcopy
 from collections import OrderedDict
 
 import torch
+import torch.optim as optim
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 from networks import build_network
@@ -69,16 +70,22 @@ class BaseModel:
         """forward pass"""
         pass
 
-    def update_model(self):
-        """update model"""
-        pass
+    def update_model_per_iteration(self):
+        """update model per iteration"""
+        for name in self.schedulers:
+            if isinstance(self.schedulers[name], optim.lr_scheduler.OneCycleLR):
+                self.schedulers[name].step()
 
-    def update_learning_rate(self):
+    def update_model_per_epoch(self):
         """
-        Update learning rate.
+        Update model per epoch.
         """
         for name in self.schedulers:
-            self.schedulers[name].step()
+            if isinstance(self.schedulers[name], (optim.lr_scheduler.StepLR, optim.lr_scheduler.MultiStepLR,
+                                                  MultiStepRestartLR, optim.lr_scheduler.ExponentialLR,
+                                                  optim.lr_scheduler.CosineAnnealingLR,
+                                                  optim.lr_scheduler.CosineAnnealingWarmRestarts)):
+                self.schedulers[name].step()
 
     def get_current_learning_rate(self):
         """
@@ -135,13 +142,13 @@ class BaseModel:
     def _setup_optimizers(self):
         def get_optimizer():
             if optim_type == 'Adam':
-                return torch.optim.Adam(optim_params, **train_opt['optims'][name])
+                return optim.Adam(optim_params, **train_opt['optims'][name])
             elif optim_type == 'AdamW':
-                return torch.optim.AdamW(optim_params, **train_opt['optims'][name])
+                return optim.AdamW(optim_params, **train_opt['optims'][name])
             elif optim_type == 'RMSprop':
-                return torch.optim.RMSprop(optim_params, **train_opt['optims'][name])
+                return optim.RMSprop(optim_params, **train_opt['optims'][name])
             elif optim_type == 'SGD':
-                return torch.optim.SGD(optim_params, **train_opt['optims'][name])
+                return optim.SGD(optim_params, **train_opt['optims'][name])
             else:
                 raise NotImplementedError(f'optimizer {optim_type} is not supported yet.')
 
@@ -174,14 +181,22 @@ class BaseModel:
         scheduler_opts = train_opt['schedulers']
         for name, optimizer in self.optimizers.items():
             scheduler_type = scheduler_opts[name].pop('type')
-            if scheduler_type in ['MultiStepLR', 'MultiStepRestartLR']:
+            if scheduler_type in 'MultiStepRestartLR':
                 self.schedulers[name] = MultiStepRestartLR(optimizer, **scheduler_opts[name])
-            elif scheduler_type == 'CosineAnnealingRestartLR':
-                self.schedulers[name] = CosineAnnealingRestartLR(optimizer, **scheduler_opts[name])
+            elif scheduler_type == 'CosineAnnealingLR':
+                self.schedulers[name] = optim.lr_scheduler.CosineAnnealingLR(optimizer, **scheduler_opts[name])
+            elif scheduler_type == 'CosineAnnealingWarmRestarts':
+                self.schedulers[name] = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, **scheduler_opts[name])
             elif scheduler_type == 'OneCycleLR':
-                self.schedulers[name] = torch.optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_opts[name])
+                self.schedulers[name] = optim.lr_scheduler.OneCycleLR(optimizer, **scheduler_opts[name])
+            elif scheduler_type == 'StepLR':
+                self.schedulers[name] = optim.lr_scheduler.StepLR(optimizer, **scheduler_opts[name])
+            elif scheduler_type == 'MultiStepLR':
+                self.schedulers[name] = optim.lr_scheduler.MultiStepLR(optimizer, **scheduler_opts[name])
+            elif scheduler_type == 'ExponentialLR':
+                self.schedulers[name] = optim.lr_scheduler.ExponentialLR(optimizer, **scheduler_opts[name])
             elif scheduler_type == 'none':
-                self.schedulers[name] = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
+                self.schedulers[name] = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1)
             else:
                 raise NotImplementedError(f'Scheduler {scheduler_type} is not implemented yet.')
 
