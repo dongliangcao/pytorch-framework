@@ -114,10 +114,8 @@ def train_pipeline(root_path):
                 model.feed_data(train_data)
                 # backward pass
                 model.optimize_parameters()
-                # update learning rate
-                model.update_learning_rate()
-                # update model
-                model.update_model()
+                # update model per iteration
+                model.update_model_per_iteration()
 
                 iter_timer.record()
                 if model.curr_iter == 1:
@@ -146,6 +144,8 @@ def train_pipeline(root_path):
                 data_timer.start()
                 iter_timer.start()
                 # end of iter
+            # update model per epoch
+            model.update_model_per_epoch()
             # end of epoch
         # end of training
     except KeyboardInterrupt:
