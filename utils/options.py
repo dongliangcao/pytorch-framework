@@ -89,7 +89,7 @@ def dict2str(opt, indent_level=1):
     msg = '\n'
     for k, v in opt.items():
         if isinstance(v, dict):
-            msg += ' ' * (indent_level * 2) + k + ':['
+            msg += ' ' * (indent_level * 2) + str(k) + ':['
             msg += dict2str(v, indent_level + 1)
             msg += ' ' * (indent_level * 2) + ']\n'
         elif isinstance(v, list):
@@ -100,7 +100,7 @@ def dict2str(opt, indent_level=1):
                 else:
                     msg += '\n' + ' ' * (indent_level * 2) + str(iv)
         else:
-            msg += ' ' * (indent_level * 2) + k + ': ' + str(v) + '\n'
+            msg += ' ' * (indent_level * 2) + str(k) + ': ' + str(v) + '\n'
     return msg
 
 
