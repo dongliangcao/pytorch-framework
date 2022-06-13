@@ -168,10 +168,15 @@ class BaseModel:
                 logger = get_root_logger()
                 logger.info(f'Network {name} has no param to optimize. Ignore it.')
                 continue
-
-            optim_type = train_opt['optims'][name].pop('type')
-            optimizer = get_optimizer()
-            self.optimizers[name] = optimizer
+            
+            if name in train_opt['optims']:
+                optim_type = train_opt['optims'][name].pop('type')
+                optimizer = get_optimizer()
+                self.optimizers[name] = optimizer
+            else:
+                # not optimize the network
+                logger = get_root_logger()
+                logger.warning(f'Network {name} will not be optimized.')
 
     def _setup_schedulers(self):
         """
