@@ -21,7 +21,6 @@ def init_tb_loggers(opt):
 
 
 def create_train_val_dataloader(opt, logger):
-    train_loader, val_loader = None, None
     train_set, val_set = None, None
     # create train and val datasets
     for dataset_name, dataset_opt in opt['datasets'].items():
