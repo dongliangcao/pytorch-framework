@@ -101,7 +101,7 @@ def train_pipeline(root_path):
     start_time = time.time()
 
     try:
-        while model.curr_epoch <= total_epochs:
+        while model.curr_epoch < total_epochs:
             model.curr_epoch += 1
             train_sampler.set_epoch(model.curr_epoch)
             for train_data in train_loader:
