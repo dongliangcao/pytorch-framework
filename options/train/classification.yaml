@@ -1,0 +1,67 @@
+# general setting
+name: mnist
+type: ClassificationModel
+manual_seed: 1234
+
+# path
+path:
+  resume_state: ~
+  resume: false
+
+# datasets
+datasets:
+  train_dataset:
+    name: Train
+    type: MNISTDataset
+    train: true
+    root: /data/caodongliang/MNIST
+    transform:
+      Normalize:
+        mean: [0.1307]
+        std: [0.3081]
+  test_dataset:
+    name: Train
+    type: MNISTDataset
+    train: false
+    root: /data/caodongliang/MNIST
+    transform:
+      Normalize:
+        mean: [0.1307]
+        std: [0.3081]
+  # setting for train dataset
+  batch_size: 64
+  num_worker: 16
+
+# network setting
+networks:
+  classifier:
+    type: ResNet
+    model_name: resnet18
+    in_channels: 1
+
+# training setting
+train:
+  total_epochs: 1
+  optims:
+    classifier:
+      type: AdamW
+      lr: 1.0e-4
+  schedulers:
+    classifier:
+      type: none
+  losses:
+    ce_loss:
+      type: CELoss
+      loss_weight: 1.0
+
+# validation setting
+val:
+  val_freq: 200
+  metrics:
+    acc:
+      type: Accuracy
+
+# log setting
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 10000

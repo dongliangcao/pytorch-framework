@@ -1,0 +1,34 @@
+# general setting
+name: mnist
+type: ClassificationModel
+manual_seed: 1234
+
+# path
+path:
+  resume_state: experiments/mnist/models/final.pth
+  resume: false
+
+# datasets
+datasets:
+  test_dataset:
+    name: Train
+    type: MNISTDataset
+    train: false
+    root: /data/caodongliang/MNIST
+    transform:
+      Normalize:
+        mean: [0.1307]
+        std: [0.3081]
+
+# network setting
+networks:
+  classifier:
+    type: ResNet
+    model_name: resnet18
+    in_channels: 1
+
+# validation setting
+val:
+  metrics:
+    acc:
+      type: Accuracy

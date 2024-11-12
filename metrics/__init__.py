@@ -1,6 +1,7 @@
 import importlib
 import os.path as osp
 
+from accelerate import Accelerator
 from utils import get_root_logger, scandir
 from utils.registry import METRIC_REGISTRY
 
@@ -15,7 +16,7 @@ metric_filenames = [osp.splitext(osp.basename(v))[0] for v in scandir(metric_fol
 _metric_modules = [importlib.import_module(f'metrics.{file_name}') for file_name in metric_filenames]
 
 
-def build_metric(opt):
+def build_metric(accelerator: Accelerator, opt):
     """Build metric from options.
 
     Args:
@@ -27,7 +28,7 @@ def build_metric(opt):
     """
     opt_type = opt.pop('type')
     metric = METRIC_REGISTRY.get(opt_type)(**opt)
-    logger = get_root_logger()
+    logger = get_root_logger(accelerator)
     logger.info(f'Metric [{metric.__class__.__name__}] is created.')
 
     return metric

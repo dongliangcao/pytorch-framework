@@ -1,6 +1,7 @@
 import importlib
 import os.path as osp
 
+from accelerate import Accelerator
 from utils import get_root_logger, scandir
 from utils.registry import NETWORK_REGISTRY
 
@@ -15,7 +16,7 @@ arch_filenames = [osp.splitext(osp.basename(v))[0] for v in scandir(arch_folder)
 _arch_modules = [importlib.import_module(f'networks.{file_name}') for file_name in arch_filenames]
 
 
-def build_network(opt):
+def build_network(accelerator: Accelerator, opt):
     """Build network from options.
 
     Args:
@@ -27,6 +28,6 @@ def build_network(opt):
     """
     network_type = opt.pop('type')
     network = NETWORK_REGISTRY.get(network_type)(**opt)
-    logger = get_root_logger()
+    logger = get_root_logger(accelerator)
     logger.info(f'Network [{network.__class__.__name__}] is created.')
     return network
