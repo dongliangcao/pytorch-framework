@@ -10,7 +10,6 @@ from os import path as osp
 import torchvision.transforms as transforms
 
 from utils import get_root_logger, scandir
-from utils.dist_util import get_dist_info
 from utils.registry import DATASET_REGISTRY
 
 __all__ = ['build_dataset', 'build_dataloader']
@@ -63,7 +62,7 @@ def build_transform(transform_opt):
     return transforms.Compose(transform)
 
 
-def build_dataset(dataset_opt):
+def build_dataset(accelerator, dataset_opt):
     """Build dataset from options.
 
     Args:
@@ -80,13 +79,14 @@ def build_dataset(dataset_opt):
     if 'transform' in dataset_opt:
         dataset_opt['transform'] = build_transform(dataset_opt.pop('transform'))
     # build dataset
-    dataset = DATASET_REGISTRY.get(type)(**dataset_opt)
-    logger = get_root_logger()
+    with accelerator.main_process_first():
+        dataset = DATASET_REGISTRY.get(type)(**dataset_opt)
+    logger = get_root_logger(accelerator)
     logger.info(f'Dataset [{dataset.__class__.__name__}]-[{dataset_name}] is built.')
     return dataset
 
 
-def build_dataloader(dataset, dataset_opt, phase, num_gpu=1, dist=False, sampler=None, seed=None):
+def build_dataloader(dataset, dataset_opt, phase, rank, sampler=None, seed=None):
     """Build dataloader.
 
     Args:
@@ -106,34 +106,26 @@ def build_dataloader(dataset, dataset_opt, phase, num_gpu=1, dist=False, sampler
     Returns:
         dataloader (torch.utils.data.DataLoader): dataloader built by opt.
     """
-    rank, _ = get_dist_info()
     if phase == 'train':
-        if dist:  # distributed training
-            denominator = 1 if num_gpu == 0 else num_gpu
-            batch_size = dataset_opt['batch_size']
-            assert batch_size % denominator == 0, f'Batch size: {batch_size} must be divisible by {denominator}.'
-            batch_size //= denominator
-            num_workers = dataset_opt['num_worker']
-        else:  # non-distributed training
-            batch_size = dataset_opt['batch_size']
-            num_workers = dataset_opt['num_worker']
+        batch_size = dataset_opt['batch_size']
+        num_workers = dataset_opt['num_worker']
         dataloader_args = dict(
             dataset=dataset,
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
             sampler=sampler,
-            drop_last=True)
+            drop_last=False,
+            persistent_workers=True,
+            pin_memory=True)
         if sampler is None:
             dataloader_args['shuffle'] = True
         dataloader_args['worker_init_fn'] = partial(
             worker_init_fn, num_workers=num_workers, rank=rank, seed=seed) if seed is not None else None
     elif phase in ['val', 'test']:  # validation
-        dataloader_args = dict(dataset=dataset, batch_size=1, shuffle=False, num_workers=2)
+        dataloader_args = dict(dataset=dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
     else:
         raise ValueError(f'Wrong dataset phase: {phase}. ' "Supported ones are 'train', 'val' and 'test'.")
-
-    dataloader_args['pin_memory'] = dataset_opt.get('pin_memory', False)
 
     return torch.utils.data.DataLoader(**dataloader_args)
 

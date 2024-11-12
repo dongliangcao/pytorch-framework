@@ -1,16 +1,17 @@
 import datetime
 import sys
-import math
 import time
+import warnings
+warnings.filterwarnings("ignore")
 from os import path as osp
 
 import torch.cuda
+from accelerate import Accelerator
 
 from datasets import build_dataloader, build_dataset
-from datasets.data_sampler import EnlargedSampler
 
 from models import build_model
-from utils import (AvgTimer, MessageLogger, get_env_info, get_root_logger,
+from utils import (AvgTimer, MessageLogger, CodeSnapshotCallback, get_env_info, get_root_logger,
                    init_tb_logger)
 from utils.options import dict2str, parse_options
 
@@ -20,79 +21,86 @@ def init_tb_loggers(opt):
     return tb_logger
 
 
-def create_train_val_dataloader(opt, logger):
+def create_train_val_dataloader(accelerator: Accelerator, opt, logger):
     train_set, val_set = None, None
     # create train and val datasets
     for dataset_name, dataset_opt in opt['datasets'].items():
         if isinstance(dataset_opt, int):  # batch_size, num_worker
             continue
         if dataset_name.startswith('train'):
-            dataset_enlarge_ratio = dataset_opt.get('dataset_enlarge_ratio', 1)
             if train_set is None:
-                train_set = build_dataset(dataset_opt)
+                train_set = build_dataset(accelerator, dataset_opt)
             else:
-                train_set += build_dataset(dataset_opt)
+                train_set += build_dataset(accelerator, dataset_opt)
         elif dataset_name.startswith('val') or dataset_name.startswith('test'):
             if val_set is None:
-                val_set = build_dataset(dataset_opt)
+                val_set = build_dataset(accelerator, dataset_opt)
             else:
-                val_set += build_dataset(dataset_opt)
+                val_set += build_dataset(accelerator, dataset_opt)
 
     # create train and val dataloaders
-    train_sampler = EnlargedSampler(train_set, opt['world_size'], opt['rank'], dataset_enlarge_ratio)
+    assert opt['datasets']['batch_size'] % opt['num_gpu'] == 0, f'cannot evenly split {opt["datasets"]["batch_size"]} batches to {opt["num_gpu"]} gpus'
+    opt['datasets']['batch_size'] = opt['datasets']['batch_size'] // opt['num_gpu']
     train_loader = build_dataloader(
         train_set,
         opt['datasets'],
         'train',
-        num_gpu=opt['num_gpu'],
-        dist=opt['dist'],
-        sampler=train_sampler,
+        rank=accelerator.process_index,
+        sampler=None,
         seed=opt['manual_seed'])
     batch_size = opt['datasets']['batch_size']
+    train_loader = accelerator.prepare(train_loader)
     num_iter_per_epoch = len(train_loader)
     total_epochs = int(opt['train']['total_epochs'])
     total_iters = total_epochs * num_iter_per_epoch
     logger.info('Training statistics:'
                 f'\n\tNumber of train images: {len(train_set)}'
-                f'\n\tDataset enlarge ratio: {dataset_enlarge_ratio}'
                 f'\n\tBatch size: {batch_size}'
-                f'\n\tWorld size (gpu number): {opt["world_size"]}'
+                f'\n\tWorld size (gpu number): {opt["num_gpu"]}'
                 f'\n\tRequire iter number per epoch: {num_iter_per_epoch}'
                 f'\n\tTotal epochs: {total_epochs}; iters: {total_iters}.')
 
     val_loader = build_dataloader(
-        val_set, opt['datasets'], 'val', num_gpu=opt['num_gpu'], dist=opt['dist'], sampler=None,
+        val_set, opt['datasets'], 'val', rank=accelerator.process_index, sampler=None,
         seed=opt['manual_seed'])
+    val_loader = accelerator.prepare_data_loader(val_loader)
     logger.info('Validation statistics:'
                 f'\n\tNumber of val images: {len(val_set)}')
 
-    return train_loader, train_sampler, val_loader, total_epochs, total_iters
+    return train_loader, val_loader, total_epochs, total_iters
 
 
-def train_pipeline(root_path):
+def train_pipeline(root_path, accelerator: Accelerator):
     # parse options, set distributed setting, set random seed
-    opt = parse_options(root_path, is_train=True)
+    opt = parse_options(root_path, accelerator, is_train=True)
     opt['root_path'] = root_path
 
     # WARNING: should not use get_root_logger in the above codes, including the called functions
     # Otherwise the logger will not be properly initialized
     log_file = osp.join(opt['path']['log'], f"train_{opt['name']}.log")
-    logger = get_root_logger(log_file=log_file)
+    logger = get_root_logger(accelerator=accelerator, log_file=log_file)
     logger.info(get_env_info())
     logger.info(dict2str(opt))
-    # initialize tensorboard logger
-    tb_logger = init_tb_loggers(opt)
+    
+    if accelerator.is_main_process:
+        # initialize tensorboard logger
+        tb_logger = init_tb_loggers(opt)
+
+        # save code snapshot
+        CodeSnapshotCallback(opt['path']['snapshot']).on_fit_start()
+    else:
+        tb_logger = None
 
     # create train and validation dataloaders
-    result = create_train_val_dataloader(opt, logger)
-    train_loader, train_sampler, val_loader, total_epochs, total_iters = result
+    result = create_train_val_dataloader(accelerator, opt, logger)
+    train_loader, val_loader, total_epochs, total_iters = result
     opt['train']['total_iter'] = total_iters
     
     # create model
-    model = build_model(opt)
+    model = build_model(accelerator, opt)
 
     # create message logger (formatted outputs)
-    msg_logger = MessageLogger(opt, model.curr_iter, tb_logger)
+    msg_logger = MessageLogger(accelerator, opt, model.curr_iter, tb_logger)
 
     # training
     logger.info(f'Start training from epoch: {model.curr_epoch}, iter: {model.curr_iter}')
@@ -102,7 +110,6 @@ def train_pipeline(root_path):
     try:
         while model.curr_epoch < total_epochs:
             model.curr_epoch += 1
-            train_sampler.set_epoch(model.curr_epoch)
             for train_data in train_loader:
                 data_timer.record()
 
@@ -139,6 +146,9 @@ def train_pipeline(root_path):
                     torch.cuda.empty_cache()
                     model.validation(val_loader, tb_logger)
 
+                # synchronize all processes
+                accelerator.wait_for_everyone()
+
                 data_timer.start()
                 iter_timer.start()
                 # end of iter
@@ -151,6 +161,8 @@ def train_pipeline(root_path):
         logger.info('Keyboard interrupt. Save model and exit...')
         model.save_model(net_only=False, best=False)
         model.save_model(net_only=True, best=True)
+        if tb_logger:
+            tb_logger.close()
         sys.exit(0)
 
     consumed_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
@@ -167,4 +179,9 @@ def train_pipeline(root_path):
 
 if __name__ == '__main__':
     root_path = osp.abspath(osp.join(__file__, osp.pardir))
-    train_pipeline(root_path)
+
+    # init accelerator
+    accelerator = Accelerator()
+
+    # start training pipeline
+    train_pipeline(root_path, accelerator)

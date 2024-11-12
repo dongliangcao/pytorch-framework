@@ -3,7 +3,7 @@ import datetime
 import logging
 import time
 
-from .dist_util import get_dist_info, master_only
+from accelerate import Accelerator
 
 # initialized logger
 initialized_logger = {}
@@ -73,13 +73,14 @@ class MessageLogger:
         tb_logger (SummaryWriter, optional): Tensorboard logger. Default None.
     """
 
-    def __init__(self, opt, start_iter=1, tb_logger=None):
+    def __init__(self, accelerator: Accelerator, opt, start_iter=1, tb_logger=None):
         self.exp_name = opt['name']
         self.start_iter = start_iter
         self.max_iters = opt['train']['total_iter']
         self.tb_logger = tb_logger
         self.start_time = time.time()
-        self.logger = get_root_logger()
+        self.logger = get_root_logger(accelerator)
+        self.accelerator = accelerator
 
     def reset_start_time(self):
         """
@@ -87,7 +88,6 @@ class MessageLogger:
         """
         self.start_time = time.time()
 
-    @master_only
     def __call__(self, log_dict):
         """
         Logging message
@@ -100,6 +100,10 @@ class MessageLogger:
                 time (float): Elapsed time for one iteration.
                 data_time (float): Elapsed time of data fetch for one iteration.
         """
+        # print only in main process
+        if not self.accelerator.is_main_process:
+            return
+
         # epoch, iter, learning rates
         epoch = log_dict.pop('epoch')
         current_iter = log_dict.pop('iter')
@@ -141,14 +145,13 @@ class MessageLogger:
         self.logger.info(message)
 
 
-@master_only
 def init_tb_logger(log_dir):
     from torch.utils.tensorboard import SummaryWriter
     tb_logger = SummaryWriter(log_dir=log_dir)
     return tb_logger
 
 
-def get_root_logger(logger_name='root_logger', log_file=None, log_level=logging.INFO):
+def get_root_logger(accelerator: Accelerator, logger_name='root_logger', log_file=None, log_level=logging.INFO):
     """Get the root logger.
 
     The logger will be initialized if it has not been initialized. By default a
@@ -179,8 +182,7 @@ def get_root_logger(logger_name='root_logger', log_file=None, log_level=logging.
     logger.propagate = False
 
     # initialize logger level for each process
-    rank, _ = get_dist_info()
-    if rank != 0:
+    if not accelerator.is_main_process:
         logger.setLevel('ERROR')
     elif log_file is not None:
         logger.setLevel(log_level)

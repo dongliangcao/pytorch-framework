@@ -7,7 +7,6 @@ from os import path as osp
 import torch
 
 from .misc import make_exp_dirs, set_random_seed
-from .dist_util import get_dist_info, init_dist
 
 
 def ordered_yaml():
@@ -54,8 +53,7 @@ def parse(opt_path, root_path, is_train=True):
     opt['is_train'] = is_train
 
     # set number of gpus
-    if opt['num_gpu'] == 'auto':
-        opt['num_gpu'] = torch.cuda.device_count()
+    opt['num_gpu'] = torch.cuda.device_count()
 
     # paths
     for key, val in opt['path'].items():
@@ -67,11 +65,13 @@ def parse(opt_path, root_path, is_train=True):
         opt['path']['experiments_root'] = experiments_root
         opt['path']['models'] = osp.join(experiments_root, 'models')
         opt['path']['log'] = osp.join(experiments_root, 'log')
+        opt['path']['snapshot'] = osp.join(experiments_root, 'snapshot')
     else:  # specify test log paths
         results_root = osp.join(root_path, 'results', opt['name'])
         opt['path']['results_root'] = results_root
         opt['path']['log'] = osp.join(results_root, 'log')
         opt['path']['visualization'] = osp.join(results_root, 'visualization')
+        opt['path']['snapshot'] = osp.join(results_root, 'snapshot')
     
     return opt
 
@@ -104,36 +104,22 @@ def dict2str(opt, indent_level=1):
     return msg
 
 
-def parse_options(root_path, is_train=True):
+def parse_options(root_path, accelerator, is_train=True):
     parser = argparse.ArgumentParser()
     parser.add_argument('--opt', type=str, required=True, help='Path to option YAML file.')
 
     args = parser.parse_args()
     opt = parse(args.opt, root_path, is_train=is_train)
 
-    # distributed settings
-    if opt['backend'] == 'dp':
-        opt['dist'] = False
-        print('Backend DataParallel.', flush=True)
-    elif opt['backend'] == 'ddp':
-        opt['dist'] = True
-        port = opt.get('port', 29500)
-        init_dist(port=port)
-        print('Backend DistributedDataParallel.', flush=True)
-    else:
-        raise ValueError(f'Invalid backend option: {opt["backend"]}, only supports "dp" and "ddp"')
-
-    # set rank and world_size
-    opt['rank'], opt['world_size'] = get_dist_info()
-
     # make experiment directories
-    make_exp_dirs(opt)
+    if accelerator.is_main_process:
+        make_exp_dirs(opt)
 
     # set random seed
     seed = opt.get('manual_seed')
     if seed is None:
         seed = random.randint(1, 10000)
         opt['manual_seed'] = seed
-    set_random_seed(seed + opt['rank'])
+    set_random_seed(seed + accelerator.process_index)
 
     return opt

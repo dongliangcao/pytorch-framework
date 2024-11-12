@@ -1,11 +1,11 @@
 import os
 import os.path as osp
+import subprocess
+import shutil
 import random
 import time
 import numpy as np
 import torch
-
-from .dist_util import master_only
 
 
 def set_random_seed(seed):
@@ -21,7 +21,6 @@ def get_time_str():
     return time.strftime('%Y%m%d_%H%M%S', time.localtime())
 
 
-@master_only
 def mkdir_and_rename(path):
     """
     Make directory. If path exists, rename it with timestamp and create a new one.
@@ -36,7 +35,6 @@ def mkdir_and_rename(path):
     os.makedirs(path, exist_ok=True)
 
 
-@master_only
 def make_exp_dirs(opt):
     """Make dirs for experiments."""
     path_opt = opt['path'].copy()
@@ -107,3 +105,29 @@ def sizeof_fmt(size, suffix='B'):
             return f'{size:3.1f} {unit}{suffix}'
         size /= 1024.0
     return f'{size:3.1f} Y{suffix}'
+
+
+class CodeSnapshotCallback():
+    def __init__(self, save_root):
+        self.savedir = save_root
+    
+    def get_file_list(self):
+        return [
+            b.decode() for b in
+            set(subprocess.check_output('git ls-files', shell=True).splitlines()) |
+            set(subprocess.check_output('git ls-files --others --exclude-standard', shell=True).splitlines())
+        ]
+    
+    def save_code_snapshot(self):
+        os.makedirs(self.savedir, exist_ok=True)
+        for f in self.get_file_list():
+            if not os.path.exists(f) or os.path.isdir(f):
+                continue
+            os.makedirs(os.path.join(self.savedir, os.path.dirname(f)), exist_ok=True)
+            shutil.copyfile(f, os.path.join(self.savedir, f))
+
+    def on_fit_start(self):
+        try:
+            self.save_code_snapshot()
+        except:
+            print("Code snapshot is not saved. Please make sure you have git installed and are in a git repository.")
