@@ -1,5 +1,6 @@
 import os
 import time
+import wandb
 from copy import deepcopy
 from collections import OrderedDict
 
@@ -120,12 +121,11 @@ class BaseModel:
         return [optimizer.param_groups[0]['lr'] for optimizer in self.optimizers.values()]
 
     @torch.no_grad()
-    def validation(self, dataloader, tb_logger, update=True):
+    def validation(self, dataloader, update=True):
         """Validation function.
 
         Args:
             dataloader (torch.utils.data.DataLoader): Validation dataloader.
-            tb_logger (tensorboard logger): Tensorboard logger.
             update (bool): update best metric and best model. Default True
         """
         pass

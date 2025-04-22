@@ -112,14 +112,18 @@ class CodeSnapshotCallback():
         self.savedir = save_root
     
     def get_file_list(self):
-        return [
+        file_list = [
             b.decode() for b in
             set(subprocess.check_output('git ls-files', shell=True).splitlines()) |
             set(subprocess.check_output('git ls-files --others --exclude-standard', shell=True).splitlines())
         ]
+        # Exclude files related to wandb
+        filtered_files = [file for file in file_list if not file.startswith('wandb')]
+        return filtered_files
     
     def save_code_snapshot(self):
         os.makedirs(self.savedir, exist_ok=True)
+        test = self.get_file_list()
         for f in self.get_file_list():
             if not os.path.exists(f) or os.path.isdir(f):
                 continue

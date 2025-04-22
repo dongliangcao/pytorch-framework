@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import torch
+import wandb
 from accelerate import Accelerator
 
 from .base_model import BaseModel
@@ -27,7 +28,7 @@ class ClassificationModel(BaseModel):
         self.get_loss_metrics()
 
     @torch.no_grad()
-    def validation(self, dataloader, tb_logger, update=True):
+    def validation(self, dataloader, update=True):
         self.eval()
         self.loss_metrics.clear()
         # save results
@@ -49,9 +50,8 @@ class ClassificationModel(BaseModel):
         if self.accelerator.is_main_process:
             avg_acc = to_numpy(torch.stack(acc).mean())
 
-            if tb_logger is not None:
-                step = self.curr_iter // self.opt['val']['val_freq']
-                tb_logger.add_scalar('val accuracy', avg_acc*100, global_step=step)
+            if self.opt['use_wandb']:
+                wandb.log({'val accuracy': avg_acc*100}, step=self.curr_iter)
 
             logger = get_root_logger(self.accelerator)
             logger.info(f'Val accuracy: {avg_acc*100:.2f}')

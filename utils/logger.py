@@ -2,12 +2,21 @@
 import datetime
 import logging
 import time
+import wandb
 
 from accelerate import Accelerator
 
 # initialized logger
 initialized_logger = {}
 
+def init_wandb(opt):
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project=opt['wandb_project'],
+        # Track hyperparameters and run metadata
+        config=opt,
+    )
+    wandb.run.name = opt["name"]
 
 class AvgTimer:
     """
@@ -70,14 +79,14 @@ class MessageLogger:
             train (dict): Contains 'total_iter' as total iterations.
 
         start_iter (int, optional): Start iteration number. Default 1.
-        tb_logger (SummaryWriter, optional): Tensorboard logger. Default None.
+        use_wandb (bool, optional): Use Wandb. Default False.
     """
 
-    def __init__(self, accelerator: Accelerator, opt, start_iter=1, tb_logger=None):
+    def __init__(self, accelerator: Accelerator, opt, start_iter=1, use_wandb=False):
         self.exp_name = opt['name']
         self.start_iter = start_iter
         self.max_iters = opt['train']['total_iter']
-        self.tb_logger = tb_logger
+        self.use_wandb = use_wandb
         self.start_time = time.time()
         self.logger = get_root_logger(accelerator)
         self.accelerator = accelerator
@@ -134,22 +143,15 @@ class MessageLogger:
         for k, v in log_dict.items():
             message += f'{k}: {v:.4e} '
             # add to tensorboard logger
-            if self.tb_logger:
+            if self.use_wandb:
                 # loss starts with "l_"
                 if k.startswith('l_'):
-                    self.tb_logger.add_scalar(f'losses/{k}', v, current_iter)
+                    wandb.log({f'losses/{k}': v}, step=current_iter)
                 else:
-                    self.tb_logger.add_scalar(k, v, current_iter)
+                    wandb.log({f'{k}': v}, step=current_iter)
 
         # print message
         self.logger.info(message)
-
-
-def init_tb_logger(log_dir):
-    from torch.utils.tensorboard import SummaryWriter
-    tb_logger = SummaryWriter(log_dir=log_dir)
-    return tb_logger
-
 
 def get_root_logger(accelerator: Accelerator, logger_name='root_logger', log_file=None, log_level=logging.INFO):
     """Get the root logger.

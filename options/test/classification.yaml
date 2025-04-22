@@ -14,7 +14,7 @@ datasets:
     name: Train
     type: MNISTDataset
     train: false
-    root: /data/caodongliang/MNIST
+    root: data/MNIST
     transform:
       Normalize:
         mean: [0.1307]
