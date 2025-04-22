@@ -1,6 +1,7 @@
 import datetime
 import sys
 import time
+import wandb
 import warnings
 warnings.filterwarnings("ignore")
 from os import path as osp
@@ -12,13 +13,9 @@ from datasets import build_dataloader, build_dataset
 
 from models import build_model
 from utils import (AvgTimer, MessageLogger, CodeSnapshotCallback, get_env_info, get_root_logger,
-                   init_tb_logger)
+                   init_wandb)
 from utils.options import dict2str, parse_options
 
-
-def init_tb_loggers(opt):
-    tb_logger = init_tb_logger(opt['path']['experiments_root'])
-    return tb_logger
 
 
 def create_train_val_dataloader(accelerator: Accelerator, opt, logger):
@@ -74,6 +71,7 @@ def train_pipeline(root_path, accelerator: Accelerator):
     # parse options, set distributed setting, set random seed
     opt = parse_options(root_path, accelerator, is_train=True)
     opt['root_path'] = root_path
+    opt['use_wandb'] = opt.get('wandb_project') is not None
 
     # WARNING: should not use get_root_logger in the above codes, including the called functions
     # Otherwise the logger will not be properly initialized
@@ -83,13 +81,11 @@ def train_pipeline(root_path, accelerator: Accelerator):
     logger.info(dict2str(opt))
     
     if accelerator.is_main_process:
-        # initialize tensorboard logger
-        tb_logger = init_tb_loggers(opt)
+        # initialize wandb
+        init_wandb(opt)
 
         # save code snapshot
         CodeSnapshotCallback(opt['path']['snapshot']).on_fit_start()
-    else:
-        tb_logger = None
 
     # create train and validation dataloaders
     result = create_train_val_dataloader(accelerator, opt, logger)
@@ -100,7 +96,7 @@ def train_pipeline(root_path, accelerator: Accelerator):
     model = build_model(accelerator, opt)
 
     # create message logger (formatted outputs)
-    msg_logger = MessageLogger(accelerator, opt, model.curr_iter, tb_logger)
+    msg_logger = MessageLogger(accelerator, opt, model.curr_iter, opt['use_wandb'])
 
     # training
     logger.info(f'Start training from epoch: {model.curr_epoch}, iter: {model.curr_iter}')
@@ -144,7 +140,7 @@ def train_pipeline(root_path, accelerator: Accelerator):
                 if opt.get('val') is not None and (model.curr_iter % opt['val']['val_freq'] == 0):
                     logger.info('Start validation.')
                     torch.cuda.empty_cache()
-                    model.validation(val_loader, tb_logger)
+                    model.validation(val_loader)
 
                 # synchronize all processes
                 accelerator.wait_for_everyone()
@@ -161,20 +157,20 @@ def train_pipeline(root_path, accelerator: Accelerator):
         logger.info('Keyboard interrupt. Save model and exit...')
         model.save_model(net_only=False, best=False)
         model.save_model(net_only=True, best=True)
-        if tb_logger:
-            tb_logger.close()
+        if opt['use_wandb']:
+            wandb.finish()
         sys.exit(0)
 
     consumed_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
     logger.info(f'End of training. Time consumed: {consumed_time}')
     logger.info(f'Last Validation.')
     if opt.get('val') is not None:
-        model.validation(val_loader, tb_logger)
+        model.validation(val_loader)
     logger.info('Save the best model.')
     model.save_model(net_only=True, best=True)  # save the best model
 
-    if tb_logger:
-        tb_logger.close()
+    if opt['use_wandb']:
+        wandb.finish()
 
 
 if __name__ == '__main__':

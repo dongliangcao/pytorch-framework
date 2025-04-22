@@ -3,6 +3,9 @@ name: mnist
 type: ClassificationModel
 manual_seed: 1234
 
+# wandb settings
+wandb_project: classification
+
 # path
 path:
   resume_state: ~
@@ -14,7 +17,7 @@ datasets:
     name: Train
     type: MNISTDataset
     train: true
-    root: /data/caodongliang/MNIST
+    root: data/MNIST
     transform:
       Normalize:
         mean: [0.1307]
@@ -23,7 +26,7 @@ datasets:
     name: Train
     type: MNISTDataset
     train: false
-    root: /data/caodongliang/MNIST
+    root: data/MNIST
     transform:
       Normalize:
         mean: [0.1307]

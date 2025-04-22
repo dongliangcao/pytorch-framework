@@ -12,6 +12,7 @@ from utils.options import dict2str, parse_options
 def test_pipeline(root_path, accelerator: Accelerator):
     # parse options, set distributed setting, set random seed
     opt = parse_options(root_path, accelerator, is_train=False)
+    opt['use_wandb'] = opt.get('wandb_project') is not None
 
     # initialize loggers
     log_file = osp.join(opt['path']['log'], f"test_{opt['name']}_{get_time_str()}.log")
@@ -45,7 +46,7 @@ def test_pipeline(root_path, accelerator: Accelerator):
 
     test_set_name = test_loader.dataset.__class__.__name__
     logger.info(f'Testing {test_set_name}...')
-    model.validation(test_loader, tb_logger=None, update=False)
+    model.validation(test_loader, update=False)
 
     # synchronize
     accelerator.wait_for_everyone()
