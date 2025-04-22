@@ -2,3 +2,4 @@ torch
 torchvision
 accelerate
 timm
+wandb
